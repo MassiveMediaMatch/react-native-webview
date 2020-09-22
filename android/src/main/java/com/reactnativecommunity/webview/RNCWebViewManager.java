@@ -812,8 +812,17 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
 
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, String url) {
-      final RNCWebView rncWebView = (RNCWebView) view;
+      final com.reactnativecommunity.webview.RNCWebViewManager.RNCWebView rncWebView = (com.reactnativecommunity.webview.RNCWebViewManager.RNCWebView) view;
       final boolean isJsDebugging = ((ReactContext) view.getContext()).getJavaScriptContextHolder().get() == 0;
+
+      String[] validSchemes = new String[]{"http", "https","file"};
+      boolean valid = false;
+      for (String keyword : validSchemes){
+        if (url.contains(keyword)){
+          valid = true;
+          break;
+        }
+      }
 
       if (!isJsDebugging && rncWebView.mCatalystInstance != null) {
         final Pair<Integer, AtomicReference<ShouldOverrideCallbackState>> lock = RNCWebViewModule.shouldOverrideUrlLoadingLock.getNewLock();
@@ -832,6 +841,11 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
               if (SystemClock.elapsedRealtime() - startTime > SHOULD_OVERRIDE_URL_LOADING_TIMEOUT) {
                 FLog.w(TAG, "Did not receive response to shouldOverrideUrlLoading in time, defaulting to allow loading.");
                 RNCWebViewModule.shouldOverrideUrlLoadingLock.removeLock(lockIdentifier);
+                if (!valid) {
+                  Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                  intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                  view.getContext().startActivity(intent);
+                }
                 return false;
               }
               lockObject.wait(SHOULD_OVERRIDE_URL_LOADING_TIMEOUT);
@@ -850,12 +864,20 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       } else {
         FLog.w(TAG, "Couldn't use blocking synchronous call for onShouldStartLoadWithRequest due to debugging or missing Catalyst instance, falling back to old event-and-load.");
         progressChangedFilter.setWaitingForCommandLoadUrl(true);
-        dispatchEvent(
-          view,
-          new TopShouldStartLoadWithRequestEvent(
-            view.getId(),
-            createWebViewEvent(view, url)));
-        return true;
+
+        if (valid) {
+          dispatchEvent(
+            view,
+            new TopShouldStartLoadWithRequestEvent(
+              view.getId(),
+              createWebViewEvent(view, url)));
+          return true;
+        } else {
+          Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+          intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+          view.getContext().startActivity(intent);
+          return false;
+        }
       }
     }
 
